@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Excel Analysis Bot</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="main-layout">
+        <!-- Sidebar: File Management -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                Excel Bot
+            </div>
+
+            <div class="drop-zone" id="drop-zone">
+                <div>DROP FILES / FOLDERS</div>
+                <div style="font-size: 0.8em; margin-top: 5px;">or click to browse</div>
+                <!-- multiple attribute for bulk, user handles folders via system dialog usually or drag drop -->
+                <input type="file" id="file-input" style="display:none" multiple accept=".xlsx,.xls">
+                <input type="file" id="folder-input" style="display:none" webkitdirectory directory multiple>
+            </div>
+
+            <div style="padding: 0 20px; display: flex; gap: 5px;">
+                <button style="width: 100%; padding: 5px;"
+                    onclick="document.getElementById('folder-input').click()">Check Folder</button>
+            </div>
+
+
+            <div class="files-list-container" id="file-list">
+                <!-- File Items will go here -->
+            </div>
+        </div>
+
+        <!-- Main Workspace: Chat & Edit -->
+        <div class="workspace">
+            <div class="workspace-header" id="workspace-header">
+                Select a file to begin
+            </div>
+
+            <div class="chat-history" id="chat-history">
+                <div class="empty-state">
+                    No active session
+                </div>
+            </div>
+
+            <div class="input-area">
+                <textarea id="query-text" placeholder="Ask a question or describe an edit..."></textarea>
+                <div class="button-group">
+                    <button id="ask-btn">Ask</button>
+                    <button id="edit-btn">Edit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const folderInput = document.getElementById('folder-input');
+        const fileListContainer = document.getElementById('file-list');
+        const workspaceHeader = document.getElementById('workspace-header');
+        const chatHistory = document.getElementById('chat-history');
+        const queryText = document.getElementById('query-text');
+
+        // State
+        let selectedHash = null;
+        let selectedFilename = null;
+
+        // --- Upload Handling ---
+        dropZone.onclick = (e) => {
+            // Prefer file input for clicking, folder input via button
+            if (e.target.tagName !== 'INPUT') fileInput.click();
+        };
+
+        dropZone.ondragover = (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        };
+
+        dropZone.ondragleave = () => {
+            dropZone.classList.remove('dragover');
+        };
+
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+
+            // Handle Items (Files or Directories)
+            const items = e.dataTransfer.items;
+            if (items) {
+                handleItems(items);
+            } else {
+                // Fallback for files only
+                upload(e.dataTransfer.files);
+            }
+        };
+
+        fileInput.onchange = (e) => {
+            if (e.target.files.length) upload(e.target.files);
+        };
+
+        folderInput.onchange = (e) => {
+            if (e.target.files.length) upload(e.target.files);
+        };
+
+        async function handleItems(items) {
+            // Basic recursive directory reading logic if needed, 
+            // but File API often flattens folders dropped on 'files' if webkitGetAsEntry is used.
+            // For MVP, standard drop usually results in FileList.
+            // If items API is available, we can distinguish.
+
+            let files = [];
+            // Simplified handling: just grab all accessible files from the DataTransfer
+            // Browsers are tricky with folders.
+            // If it's a simple drag/drop of folder, Chrome puts files in files list.
+
+            const dtFiles = [];
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : items[i];
+                if (item) {
+                    await traverseFileTree(item, dtFiles);
+                }
+            }
+            if (dtFiles.length > 0) upload(dtFiles);
+        }
+
+        async function traverseFileTree(item, fileList) {
+            if (item.isFile) {
+                return new Promise((resolve) => {
+                    item.file((file) => {
+                        fileList.push(file);
+                        resolve();
+                    });
+                });
+            } else if (item.isDirectory) {
+                const dirReader = item.createReader();
+                return new Promise((resolve) => {
+                    dirReader.readEntries(async (entries) => {
+                        for (let i = 0; i < entries.length; i++) {
+                            await traverseFileTree(entries[i], fileList);
+                        }
+                        resolve();
+                    });
+                });
+            }
+        }
+
+        function upload(files) {
+            if (files.length === 0) return;
+
+            // Filter for Excel
+            let validFiles = [];
+            for (let i = 0; i < files.length; i++) {
+                if (files[i].name.match(/\.(xlsx|xls)$/i)) {
+                    validFiles.push(files[i]);
+                }
+            }
+
+            if (validFiles.length === 0) {
+                alert("No Excel files found in selection.");
+                return;
+            }
+
+            let fd = new FormData();
+            validFiles.forEach(f => fd.append('files', f));
+
+            appendMessage(`Uploading ${validFiles.length} files...`, 'bot');
+
+            fetch('/upload', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    appendMessage(`Successfully uploaded ${data.length} files.`, 'bot');
+                    loadList();
+                })
+                .catch(e => {
+                    console.error(e);
+                    appendMessage("Upload Error", 'bot');
+                });
+        }
+
+        // --- File List & Selection ---
+        function loadList() {
+            fetch('/list').then(r => r.json()).then(data => {
+                fileListContainer.innerHTML = '';
+                data.forEach(f => {
+                    let div = document.createElement('div');
+                    div.className = 'file-item';
+                    if (f.hash_id === selectedHash) div.classList.add('selected');
+
+                    div.innerHTML = `
+                        <span class="file-name">${f.filename}</span>
+                        <span class="file-meta">${f.upload_date.split('T')[0]} | ${f.upload_source}</span>
+                    `;
+                    div.onclick = () => selectFile(f);
+                    fileListContainer.appendChild(div);
+                });
+            });
+        }
+
+        function selectFile(f) {
+            selectedHash = f.hash_id;
+            selectedFilename = f.filename;
+
+            // Update UI
+            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+            loadList(); // Brute force redraw to apply class or complex selector
+
+            workspaceHeader.textContent = selectedFilename;
+
+            // Clear Chat or Load History? For now, clear to signal new session context
+            chatHistory.innerHTML = '';
+            appendMessage(`Active context: ${f.filename}`, 'bot');
+            appendMessage('Ask a question or describe an edit.', 'bot');
+        }
+
+        loadList();
+
+        // --- Chat & Actions ---
+        function appendMessage(text, sender) {
+            let msgDiv = document.createElement('div');
+            msgDiv.className = `message ${sender}`;
+            msgDiv.textContent = text;
+            chatHistory.appendChild(msgDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        document.getElementById('ask-btn').onclick = () => performAction('/query', 'query');
+        document.getElementById('edit-btn').onclick = () => performAction('/edit', 'instruction');
+
+        function performAction(endpoint, paramName) {
+            if (!selectedHash) {
+                alert("Please select a file first.");
+                return;
+            }
+            let q = queryText.value.trim();
+            if (!q) return;
+
+            appendMessage(q, 'user');
+            queryText.value = '';
+
+            // Loading state
+            let loadingMsg = document.createElement('div');
+            loadingMsg.className = 'message bot';
+            loadingMsg.textContent = 'Processing...';
+            chatHistory.appendChild(loadingMsg);
+
+            let fd = new FormData();
+            fd.append('hash_id', selectedHash);
+            fd.append(paramName, q);
+
+            fetch(endpoint, { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(d => {
+                    chatHistory.removeChild(loadingMsg);
+                    if (d.response) {
+                        appendMessage(d.response, 'bot');
+                    } else if (d.status === 'success') {
+                        appendMessage(`Success: ${d.message}. New version created with hash: ${d.new_hash}`, 'bot');
+                        loadList(); // Refresh list to show new file
+                    } else {
+                        appendMessage(`Error: ${d.message}`, 'bot');
+                    }
+                })
+                .catch(() => {
+                    chatHistory.removeChild(loadingMsg);
+                    appendMessage("Network Error", 'bot');
+                });
+        }
+    </script>
+</body>
+
+</html>

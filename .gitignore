@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Data and Uploads (Local storage)
+**/data/
+*.db
+*.sqlite
+*.xlsx
+*.xls
+
+# OS
+.DS_Store
+Thumbs.db
