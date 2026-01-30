@@ -32,6 +32,10 @@
             <div class="files-list-container" id="file-list">
                 <!-- File Items will go here -->
             </div>
+            <!-- Settings Button -->
+            <div style="padding: 10px 20px; border-top: 2px solid #000000; margin-top: auto;">
+                <button style="width: 100%; border: 1px solid #000000;" onclick="openSettings()">Settings ⚙️</button>
+            </div>
         </div>
 
         <!-- Main Workspace: Chat & Edit -->
@@ -56,6 +60,25 @@
         </div>
     </div>
 
+    <!-- Settings Modal -->
+    <div id="settings-modal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.9); z-index:1000; align-items:center; justify-content:center;">
+        <div
+            style="background:#FFF; border:2px solid #000000; padding:30px; width:400px; box-shadow: 10px 10px 0px #000000;">
+            <h3>Settings</h3>
+            <label style="display:block; margin-bottom:10px;">OpenAI/compatible API Key:</label>
+            <input type="password" id="api-key-input"
+                style="width:100%; padding:10px; margin-bottom:10px; border:2px solid #000000; box-sizing:border-box;">
+            <div style="font-size:0.8em; color:#555; margin-bottom:20px;">
+                Status: <span id="key-status">Unknown</span>
+            </div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button onclick="closeSettings()">Close</button>
+                <button onclick="saveSettings()" style="background:#000; color:#FFF;">Save</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
@@ -65,9 +88,46 @@
         const chatHistory = document.getElementById('chat-history');
         const queryText = document.getElementById('query-text');
 
+        // Settings Elements
+        const settingsModal = document.getElementById('settings-modal');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const keyStatus = document.getElementById('key-status');
+
         // State
         let selectedHash = null;
         let selectedFilename = null;
+
+        // --- Settings Logic ---
+        function openSettings() {
+            settingsModal.style.display = 'flex';
+            checkKeyStatus();
+            apiKeyInput.value = ''; // Don't show existing key for security
+        }
+
+        function closeSettings() {
+            settingsModal.style.display = 'none';
+        }
+
+        function checkKeyStatus() {
+            fetch('/settings/status').then(r => r.json()).then(d => {
+                keyStatus.textContent = d.has_api_key ? "✅ Key Configured" : "❌ Key Missing";
+            });
+        }
+
+        function saveSettings() {
+            let key = apiKeyInput.value.trim();
+            if (!key) return alert("Please enter a key.");
+
+            let fd = new FormData();
+            fd.append('api_key', key);
+
+            fetch('/settings/save', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(d => {
+                    alert(d.message);
+                    closeSettings();
+                });
+        }
 
         // --- Upload Handling ---
         dropZone.onclick = (e) => {

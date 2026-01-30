@@ -4,6 +4,7 @@ import shutil
 from datetime import datetime
 from db import DBHandler
 from ai_analyzer import AIAnalyzer
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()

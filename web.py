@@ -46,5 +46,40 @@ def edit_file(hash_id: str = Form(...), instruction: str = Form(...)):
     else:
         return {"status": "error", "message": msg}
 
+@app.get("/settings/status")
+def get_settings_status():
+    api_key = os.getenv("AI_API_KEY", "")
+    return {"has_api_key": len(api_key) > 5}
+
+@app.post("/settings/save")
+def save_settings(api_key: str = Form(...)):
+    # Simple .env writer
+    env_lines = []
+    if os.path.exists(".env"):
+        with open(".env", "r") as f:
+            env_lines = f.readlines()
+    
+    new_lines = []
+    key_found = False
+    for line in env_lines:
+        if line.startswith("AI_API_KEY="):
+            new_lines.append(f"AI_API_KEY={api_key}\n")
+            key_found = True
+        else:
+            new_lines.append(line)
+    
+    if not key_found:
+        new_lines.append(f"\nAI_API_KEY={api_key}\n")
+        
+    with open(".env", "w") as f:
+        f.writelines(new_lines)
+    
+    # Update local process env for immediate use
+    os.environ["AI_API_KEY"] = api_key
+    bot.analyzer.api_key = api_key # Update instance directly if possible or trigger reload
+    bot.analyzer.client = bot.OpenAI(api_key=api_key) # Re-init client
+    
+    return {"status": "success", "message": "API Key saved. You can now use AI features."}
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
