@@ -64,17 +64,58 @@
     <div id="settings-modal"
         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.9); z-index:1000; align-items:center; justify-content:center;">
         <div
-            style="background:#FFF; border:2px solid #000000; padding:30px; width:400px; box-shadow: 10px 10px 0px #000000;">
-            <h3>Settings</h3>
-            <label style="display:block; margin-bottom:10px;">OpenAI/compatible API Key:</label>
-            <input type="password" id="api-key-input"
-                style="width:100%; padding:10px; margin-bottom:10px; border:2px solid #000000; box-sizing:border-box;">
-            <div style="font-size:0.8em; color:#555; margin-bottom:20px;">
-                Status: <span id="key-status">Unknown</span>
+            style="background:#FFF; border:2px solid #000000; padding:30px; width:500px; box-shadow: 10px 10px 0px #000000;">
+            <h3 style="margin-top:0;">Settings</h3>
+
+            <label style="display:block; margin-bottom:5px; font-weight:bold;">Active Provider:</label>
+            <select id="provider-select"
+                style="width:100%; padding:10px; margin-bottom:10px; border:2px solid #000000;">
+                <option value="openai">OpenAI (GPT)</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="gemini">Google (Gemini)</option>
+                <option value="openrouter">OpenRouter (All)</option>
+            </select>
+
+            <label style="display:block; margin-bottom:5px; font-weight:bold;">Model Name:</label>
+            <input type="text" id="model-input" placeholder="e.g. gpt-4o, claude-3-opus-20240229"
+                style="width:100%; padding:10px; margin-bottom:20px; border:2px solid #000000;">
+
+            <div style="margin-bottom:15px;">
+                <label style="display:block; font-size:0.9em;">OpenAI API Key <span id="status-openai"></span></label>
+                <input type="password" id="key-openai" placeholder="sk-..."
+                    style="width:100%; padding:8px; border:1px solid #ccc;">
             </div>
-            <div style="display:flex; gap:10px; justify-content:flex-end;">
-                <button onclick="closeSettings()">Close</button>
-                <button onclick="saveSettings()" style="background:#000; color:#FFF;">Save</button>
+
+            <div style="margin-bottom:15px;">
+                <label style="display:block; font-size:0.9em;">Anthropic API Key <span
+                        id="status-anthropic"></span></label>
+                <input type="password" id="key-anthropic" placeholder="sk-ant-..."
+                    style="width:100%; padding:8px; border:1px solid #ccc;">
+            </div>
+
+            <div style="margin-bottom:15px;">
+                <label style="display:block; font-size:0.9em;">Gemini API Key <span id="status-gemini"></span></label>
+                <input type="password" id="key-gemini" placeholder="AIza..."
+                    style="width:100%; padding:8px; border:1px solid #ccc;">
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block; font-size:0.9em;">OpenRouter Key <span
+                        id="status-openrouter"></span></label>
+                <input type="password" id="key-openrouter" placeholder="sk-or-..."
+                    style="width:100%; padding:8px; border:1px solid #ccc;">
+            </div>
+
+            <div
+                style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #eee; padding-top:15px;">
+                <div style="font-size:0.8em; color:#555;">
+                    Created by <b>RuturajS</b> | <a href="https://github.com/RuturajS/rambot" target="_blank"
+                        style="color:#000;">GitHub</a>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="closeSettings()">Close</button>
+                    <button onclick="saveSettings()" style="background:#000; color:#FFF;">Save</button>
+                </div>
             </div>
         </div>
     </div>
@@ -90,8 +131,13 @@
 
         // Settings Elements
         const settingsModal = document.getElementById('settings-modal');
-        const apiKeyInput = document.getElementById('api-key-input');
-        const keyStatus = document.getElementById('key-status');
+        // Inputs
+        const providerSelect = document.getElementById('provider-select');
+        const modelInput = document.getElementById('model-input');
+        const keyOpenAI = document.getElementById('key-openai');
+        const keyAnthropic = document.getElementById('key-anthropic');
+        const keyGemini = document.getElementById('key-gemini');
+        const keyOpenRouter = document.getElementById('key-openrouter');
 
         // State
         let selectedHash = null;
@@ -101,7 +147,11 @@
         function openSettings() {
             settingsModal.style.display = 'flex';
             checkKeyStatus();
-            apiKeyInput.value = ''; // Don't show existing key for security
+            // Clear inputs for security, user re-enters to update
+            keyOpenAI.value = '';
+            keyAnthropic.value = '';
+            keyGemini.value = '';
+            keyOpenRouter.value = '';
         }
 
         function closeSettings() {
@@ -110,16 +160,29 @@
 
         function checkKeyStatus() {
             fetch('/settings/status').then(r => r.json()).then(d => {
-                keyStatus.textContent = d.has_api_key ? "✅ Key Configured" : "❌ Key Missing";
+                providerSelect.value = d.provider;
+                modelInput.value = d.model || '';
+                updateStatusIcon('status-openai', d.openai);
+                updateStatusIcon('status-anthropic', d.anthropic);
+                updateStatusIcon('status-gemini', d.gemini);
+                updateStatusIcon('status-openrouter', d.openrouter);
             });
         }
 
-        function saveSettings() {
-            let key = apiKeyInput.value.trim();
-            if (!key) return alert("Please enter a key.");
+        function updateStatusIcon(id, isActive) {
+            document.getElementById(id).textContent = isActive ? "✅" : "❌";
+        }
 
+        function saveSettings() {
             let fd = new FormData();
-            fd.append('api_key', key);
+            fd.append('provider', providerSelect.value);
+            fd.append('model', modelInput.value.trim());
+
+            // Only send keys if they are typed
+            if (keyOpenAI.value.trim()) fd.append('openai_key', keyOpenAI.value.trim());
+            if (keyAnthropic.value.trim()) fd.append('anthropic_key', keyAnthropic.value.trim());
+            if (keyGemini.value.trim()) fd.append('gemini_key', keyGemini.value.trim());
+            if (keyOpenRouter.value.trim()) fd.append('openrouter_key', keyOpenRouter.value.trim());
 
             fetch('/settings/save', { method: 'POST', body: fd })
                 .then(r => r.json())
